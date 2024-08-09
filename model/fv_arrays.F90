@@ -229,6 +229,8 @@ module fv_arrays_mod
 !  -> moved to grid_tools
 
 
+   integer :: adv_scheme = 1 !< 2D advection scheme
+
 !> Momentum (or KE) options:
    integer :: hord_mt = 10   !< Horizontal advection scheme for momentum fluxes. A
                              !< complete list of kord options is given in the
@@ -480,6 +482,7 @@ module fv_arrays_mod
                                   !< temperature. False by default; if true, q_split and z_tracer are ignored.
    logical :: adiabatic = .false. !< Run without physics (full or idealized).
 #endif
+
 !-----------------------------------------------------------
 ! Grid shifting, rotation, and cube transformations:
 !-----------------------------------------------------------
@@ -1282,8 +1285,11 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: local_omga(:,:,:)   _NULL  ! Vertical pressure velocity (pa/s)
     real, _ALLOCATABLE :: ua(:,:,:)     _NULL  ! (ua, va) are mostly used as the A grid winds
     real, _ALLOCATABLE :: va(:,:,:)     _NULL
-    real, _ALLOCATABLE :: uc(:,:,:)     _NULL  ! (uc, vc) are mostly used as the C grid winds
+    real, _ALLOCATABLE :: uc(:,:,:)     _NULL  ! (uc, vc) are mostly used as the C grid winds at time level n+0.5
     real, _ALLOCATABLE :: vc(:,:,:)     _NULL
+
+    real, _ALLOCATABLE :: uc_old(:,:,:)     _NULL  ! (uc, vc) are C grid winds at time level n that are used in the 2nd order
+    real, _ALLOCATABLE :: vc_old(:,:,:)     _NULL  ! departure point scheme 
 
     real, _ALLOCATABLE :: ak(:)  _NULL
     real, _ALLOCATABLE :: bk(:)  _NULL
@@ -1517,6 +1523,8 @@ contains
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%uc(isd:ied+1,jsd:jed  ,npz) )
     allocate (   Atm%vc(isd:ied  ,jsd:jed+1,npz) )
+    allocate (   Atm%uc_old(isd:ied+1,jsd:jed  ,npz) )
+    allocate (   Atm%vc_old(isd:ied  ,jsd:jed+1,npz) )
     ! For tracer transport:
     allocate ( Atm%mfx(is:ie+1, js:je,  npz) )
     allocate ( Atm%mfy(is:ie  , js:je+1,npz) )
@@ -1884,6 +1892,8 @@ contains
     deallocate (   Atm%va )
     deallocate (   Atm%uc )
     deallocate (   Atm%vc )
+    deallocate (   Atm%uc_old )
+    deallocate (   Atm%vc_old )
     deallocate ( Atm%mfx )
     deallocate ( Atm%mfy )
     deallocate (  Atm%cx )

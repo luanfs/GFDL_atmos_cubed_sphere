@@ -71,7 +71,7 @@ public :: dyn_core, del2_cubed, init_ijk_mem
 
   real :: ptk, peln1, rgrav
   real :: d3_damp
-  real, allocatable, dimension(:,:,:) ::  ut, vt, crx, cry, xfx, yfx, divgd, &
+  real, allocatable, dimension(:,:,:) ::  ut, vt, crx, cry, xfx, yfx,  crx_rk2, cry_rk2, xfx_rk2, yfx_rk2, divgd, &
                                           zh, du, dv, pkc, delpc, pk3, ptc, gz
 ! real, parameter:: delt_max = 1.e-1   ! Max dissipative heating/cooling rate
                                        ! 6 deg per 10-min
@@ -91,7 +91,7 @@ contains
 
  subroutine dyn_core(npx, npy, npz, ng, sphum, nq, bdt, n_map, n_split, zvir, cp, akap, cappa, grav, hydrostatic,  &
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
-                     uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
+                     uc, vc, uc_old, vc_old, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
                      init_step, i_pack, end_step, diss_est, consv, te0_2d, time_total)
     integer, intent(IN) :: npx
@@ -143,6 +143,8 @@ contains
     real, intent(inout):: omga(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    ! Vertical pressure velocity (pa/s)
     real, intent(inout):: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)  ! (uc, vc) are mostly used as the C grid winds
     real, intent(inout):: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
+    real, intent(inout):: uc_old(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)
+    real, intent(inout):: vc_old(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
     real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: ua, va
     real, intent(inout):: q_con(bd%isd:, bd%jsd:, 1:)
     real, intent(inout):: te0_2d(bd%is:bd%ie,bd%js:bd%je)
@@ -257,6 +259,10 @@ contains
            allocate( xfx(is :ie+1, jsd:jed,  npz) )
            allocate( cry(isd:ied,  js :je+1, npz) )
            allocate( yfx(isd:ied,  js :je+1, npz) )
+           allocate( crx_rk2(is :ie+1, jsd:jed,  npz) )
+           allocate( xfx_rk2(is :ie+1, jsd:jed,  npz) )
+           allocate( cry_rk2(isd:ied,  js :je+1, npz) )
+           allocate( yfx_rk2(isd:ied,  js :je+1, npz) )
            allocate( divgd(isd:ied+1,jsd:jed+1,npz) )
            allocate( delpc(isd:ied, jsd:jed  ,npz  ) )
 !                    call init_ijk_mem(isd,ied, jsd,jed, npz, delpc, 0.)
@@ -304,7 +310,6 @@ contains
               endif
          endif
     endif
-
 
 
 !-----------------------------------------------------
@@ -428,15 +433,16 @@ contains
      if( .not. hydrostatic )  &
           call complete_group_halo_update(i_pack(7), domain)
      call timing_off('COMM_TOTAL')
-
+ 
       call timing_on('C_SW')
-!$OMP parallel do default(none) shared(npz,isd,jsd,delpc,delp,ptc,pt,u,v,w,uc,vc,ua,va, &
+!$OMP parallel do default(none) shared(npz,isd,jsd,delpc,delp,ptc,pt,u,v,w,uc,vc,uc_old,vc_old,ua,va, &
 !$OMP                                  omga,ut,vt,divgd,flagstruct,dt2,hydrostatic,bd,  &
 !$OMP                                  gridstruct)
       do k=1,npz
          call c_sw(delpc(isd,jsd,k), delp(isd,jsd,k),  ptc(isd,jsd,k),    &
                       pt(isd,jsd,k),    u(isd,jsd,k),    v(isd,jsd,k),    &
                        w(isd:,jsd:,k),   uc(isd,jsd,k),   vc(isd,jsd,k),    &
+                       uc_old(isd:,jsd:,k),   vc_old(isd,jsd,k),  &
                       ua(isd,jsd,k),   va(isd,jsd,k), omga(isd,jsd,k),    &
                       ut(isd,jsd,k),   vt(isd,jsd,k), divgd(isd,jsd,k),   &
                       flagstruct%nord,   dt2,  hydrostatic,  .true., bd,  &
@@ -448,7 +454,6 @@ contains
           call start_group_halo_update(i_pack(3), divgd, domain, position=CORNER)
           call timing_off('COMM_TOTAL')
       endif
-
       if (gridstruct%nested) then
          call nested_grid_BC_apply_intT(delpc, &
               0, 0, npx, npy, npz, bd, split_timestep_BC+0.5, real(n_split*flagstruct%k_split), &
@@ -568,8 +573,17 @@ contains
       call p_grad_c(dt2, npz, delpc, pkc, gz, uc, vc, bd, gridstruct%rdxc, gridstruct%rdyc, hydrostatic)
 
       call timing_on('COMM_TOTAL')
+
       call start_group_halo_update(i_pack(9), uc, vc, domain, gridtype=CGRID_NE)
       call timing_off('COMM_TOTAL')
+
+    if(flagstruct%adv_scheme==2)then
+      call timing_on('COMM_TOTAL')
+
+      call start_group_halo_update(i_pack(14), uc_old, vc_old, domain, gridtype=CGRID_NE)
+      call timing_off('COMM_TOTAL')
+    endif
+
 #ifdef SW_DYNAMICS
       if (test_case==9) call case9_forcing2(phis, isd, ied, jsd, jed)
       endif !test_case>1
@@ -577,15 +591,23 @@ contains
 
     call timing_on('COMM_TOTAL')
     if (flagstruct%inline_q .and. nq>0) call complete_group_halo_update(i_pack(10), domain)
+
 #ifdef SW_DYNAMICS
     if (test_case > 1) then
 #endif
+
                         if (flagstruct%nord > 0) call complete_group_halo_update(i_pack(3), domain)
                                                  call complete_group_halo_update(i_pack(9), domain)
+
+    if(flagstruct%adv_scheme==2)then
+                        if (flagstruct%nord > 0) call complete_group_halo_update(i_pack(14), domain)
+    endif
+
 #ifdef SW_DYNAMICS
     endif
 #endif
     call timing_off('COMM_TOTAL')
+
 
       if (gridstruct%nested) then
          !On a nested grid we have to do SOMETHING with uc and vc in
@@ -659,12 +681,11 @@ contains
 
     endif
 
-
     call timing_on('D_SW')
 !$OMP parallel do default(none) shared(npz,flagstruct,nord_v,pfull,damp_vt,hydrostatic,last_step, &
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
-!$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
-!$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
+!$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,uc_old,vc_old,ua,va,divgd,mfx,mfy,cx,cy,     &
+!$OMP                                  crx,cry,xfx,yfx,crx_rk2,cry_rk2,xfx_rk2,yfx_rk2,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
 !$OMP                                  heat_source,diss_est,radius)                     &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
 !$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s, diss_e, z_rat)
@@ -761,9 +782,12 @@ contains
        endif
        call d_sw(vt(isd,jsd,k), delp(isd,jsd,k), ptc(isd,jsd,k),  pt(isd,jsd,k),      &
                   u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
-                  vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
+                  vc(isd,jsd,k),  uc_old(isd,jsd,k),   vc_old(isd,jsd,k),  &
+                  ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
                   mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
                   crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
+                  crx_rk2(is, jsd,k),  cry_rk2(isd,js, k), xfx_rk2(is, jsd,k), yfx_rk2(isd,js, k),    &
+
 #ifdef USE_COND
                   q_con(isd:,jsd:,k),  z_rat(isd,jsd),  &
 #else
@@ -773,7 +797,7 @@ contains
                   flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
                   nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
                   damp_vt(k), damp_w, damp_t, d_con_k, &
-                  hydrostatic, gridstruct, flagstruct, bd)
+                  hydrostatic, gridstruct, flagstruct, bd, k)
 
        if((.not.flagstruct%use_old_omega) .and. last_step ) then
 ! Average horizontal "convergence" to cell center
@@ -1353,6 +1377,12 @@ contains
     deallocate(   xfx )
     deallocate(   cry )
     deallocate(   yfx )
+
+    deallocate(   crx_rk2)
+    deallocate(   xfx_rk2)
+    deallocate(   cry_rk2)
+    deallocate(   yfx_rk2)
+
     deallocate( divgd )
     deallocate(   pkc )
     deallocate( delpc )
@@ -1368,7 +1398,8 @@ contains
 
   endif
   if( allocated(pem) )   deallocate ( pem )
-
+  !print*,'BYE'
+  !stop
 end subroutine dyn_core
 
 subroutine pk3_halo(is, ie, js, je, isd, ied, jsd, jed, npz, ptop, akap, pk3, delp)

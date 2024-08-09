@@ -25,7 +25,7 @@ module sw_core_mod
  use fv_mp_mod, only: fill_corners, XDir, YDir
  use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, fv_flags_type
  use a2b_edge_mod, only: a2b_ord4
- use mpp_mod, only: mpp_pe !DEBUG
+ use mpp_mod, only: mpp_pe, mpp_error, FATAL !DEBUG
 
 #ifdef SW_DYNAMICS
  use test_cases_mod,   only: test_case
@@ -76,18 +76,21 @@ module sw_core_mod
   contains
 
 
-   subroutine c_sw(delpc, delp, ptc, pt, u,v, w, uc,vc, ua,va, wc,  &
+   !subroutine c_sw(delpc, delp, ptc, pt, u,v, w, uc,vc, ua,va, wc,  &
+   subroutine c_sw(delpc, delp, ptc, pt, u,v, w, uc,vc, uc_old,vc_old, ua,va, wc,  &
                    ut, vt, divg_d, nord, dt2, hydrostatic, dord4, &
-                   bd, gridstruct, flagstruct)
+                   bd, gridstruct, flagstruct, k)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
-      real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1) :: u, vc
-      real, intent(INOUT), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ) :: v, uc
+      real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1) :: u, vc, vc_old
+      real, intent(INOUT), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ) :: v, uc, uc_old
+ 
       real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed  ) :: delp,  pt,  ua, va, ut, vt
       real, intent(INOUT), dimension(bd%isd:      ,  bd%jsd:        ) :: w
       real, intent(OUT  ), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed  ) :: delpc, ptc, wc
       real, intent(OUT  ), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) :: divg_d
       integer, intent(IN) :: nord
+      integer, intent(IN) :: k
       real,    intent(IN) :: dt2
       logical, intent(IN) :: hydrostatic
       logical, intent(IN) :: dord4
@@ -144,10 +147,25 @@ module sw_core_mod
       ne_corner = gridstruct%ne_corner
 
       iep1 = ie+1; jep1 = je+1
+ 
+     call d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, bd, &
+                     npx, npy, bounded_domain, flagstruct%grid_type, k)
 
-      call d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, bd, &
-                      npx, npy, bounded_domain, flagstruct%grid_type)
 
+      if(flagstruct%adv_scheme==2)then
+         do j = jsd, jed
+            do i = is, ie+1
+               uc_old(i,j) = uc(i,j) 
+            enddo
+         enddo
+
+         do j = js, je+1
+            do i = isd, ied
+               vc_old(i,j) = vc(i,j) 
+            enddo
+         enddo
+      endif
+    
       if( nord > 0 ) then
          if (bounded_domain) then
             call divergence_corner_nest(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
@@ -491,13 +509,22 @@ module sw_core_mod
 
 !     d_sw :: D-Grid Shallow Water Routine
 
-   subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
+   subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, uc_old,vc_old, &
                    ua, va, divg_d, xflux, yflux, cx, cy,              &
-                   crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,    &
+                   crx_adv, cry_adv,  xfx_adv, yfx_adv, &
+                   crx_rk2, cry_rk2,  xfx_rk2, yfx_rk2, & 
+                   q_con, z_rat, kgb, heat_source,    &
                    diss_est, zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
                    nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
                    damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd)
+   !subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
+   !                ua, va, divg_d, xflux, yflux, cx, cy,              &
+   !                crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,    &
+   !                diss_est, zvir, sphum, nq, q, k, km, inline_q,  &
+   !                dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
+   !                nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
+   !                damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd)
 
       integer, intent(IN):: hord_tr, hord_mt, hord_vt, hord_tm, hord_dp
       integer, intent(IN):: nord   ! nord=1 divergence damping; (del-4) or 3 (del-8)
@@ -513,8 +540,9 @@ module sw_core_mod
       real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: z_rat
       real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: delp, pt, ua, va
       real, intent(INOUT), dimension(bd%isd:      ,  bd%jsd:      ):: w, q_con
-      real, intent(INOUT), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: u, vc
-      real, intent(INOUT), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: v, uc
+      real, intent(INOUT), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: u, vc, vc_old
+      real, intent(INOUT), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: v, uc, uc_old
+ 
       real, intent(INOUT):: q(bd%isd:bd%ied,bd%jsd:bd%jed,km,nq)
       real, intent(OUT),   dimension(bd%isd:bd%ied,  bd%jsd:bd%jed)  :: delpc, ptc
       real, intent(OUT),   dimension(bd%is:bd%ie,bd%js:bd%je):: heat_source
@@ -529,6 +557,11 @@ module sw_core_mod
       logical, intent(IN):: inline_q
       real, intent(OUT), dimension(bd%is:bd%ie+1,bd%jsd:bd%jed):: crx_adv, xfx_adv
       real, intent(OUT), dimension(bd%isd:bd%ied,bd%js:bd%je+1):: cry_adv, yfx_adv
+      real, intent(OUT), dimension(bd%is:bd%ie+1,bd%jsd:bd%jed):: crx_rk2, xfx_rk2
+      real, intent(OUT), dimension(bd%isd:bd%ied,bd%js:bd%je+1):: cry_rk2, yfx_rk2
+      !real, dimension(bd%is:bd%ie+1,bd%jsd:bd%jed):: crx_rk2, xfx_rk2
+      !real, dimension(bd%isd:bd%ied,bd%js:bd%je+1):: cry_rk2, yfx_rk2
+ 
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(fv_flags_type), intent(IN), target :: flagstruct
 ! Local:
@@ -553,6 +586,8 @@ module sw_core_mod
       real :: ra_y(bd%isd:bd%ied,bd%js:bd%je)
       real :: gx(bd%is:bd%ie+1,bd%js:bd%je  )
       real :: gy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! work Y-dir flux array
+      real :: ut_old(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+      real :: vt_old(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
       logical :: fill_c
 
       real :: dt2, dt4, dt5, dt6
@@ -572,6 +607,7 @@ module sw_core_mod
 
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
+      integer :: istart, iend, jstart, jend
       integer :: npx, npy, ng
       logical :: bounded_domain
 
@@ -843,13 +879,27 @@ module sw_core_mod
 
      else
 ! flagstruct%grid_type >= 3
+        if(flagstruct%adv_scheme==2)then
+           istart = is-1
+           iend   = ie+2
+           jstart = js-1
+           jend   = je+2
+        else
+           istart = is
+           iend   = ie+1
+           jstart = js
+           jend   = je+1
+        endif
+
         do j=jsd,jed
-           do i=is,ie+1
+           !do i=is,ie+1
+           do i=istart, iend
               ut(i,j) =  uc(i,j)
            enddo
         enddo
 
-        do j=js,je+1
+        !do j=js,je+1
+        do j=jstart,jend
            do i=isd,ied
               vt(i,j) = vc(i,j)
            enddo
@@ -897,6 +947,12 @@ module sw_core_mod
            enddo
         enddo
 
+        if(flagstruct%adv_scheme==2) then
+           call compute_ut_vt( uc_old, vc_old, ut_old, vt_old, dt, gridstruct, flagstruct, bd)
+           call departure_cfl_rk2(gridstruct, flagstruct, bd, crx_rk2, cry_rk2, ut_old, vt_old, ut, vt, dt)
+           call compute_xfx_yfx_rk2(gridstruct, flagstruct, bd, crx_rk2, cry_rk2, xfx_rk2, yfx_rk2)
+        endif
+
 #ifdef SW_DYNAMICS
       endif
 #endif
@@ -912,8 +968,14 @@ module sw_core_mod
          enddo
       enddo
 
-      call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_dp, fx, fy,  &
-                    xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, nord=nord_v, damp_c=damp_v)
+      if(flagstruct%adv_scheme==1) then
+         call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_dp, fx, fy,  &
+                   xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, nord=nord_v, damp_c=damp_v)
+      else if(flagstruct%adv_scheme==2) then
+         call fv_tp_2d(delp, crx_rk2, cry_rk2, npx, npy, hord_dp, fx, fy,  &
+                    xfx_rk2,yfx_rk2, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, nord=nord_v, damp_c=damp_v, &
+                    advscheme=flagstruct%adv_scheme)
+      endif
 
 ! <<< Save the mass fluxes to the "Flux Capacitor" for tracer transport >>>
         do j=jsd,jed
@@ -1475,8 +1537,15 @@ module sw_core_mod
     endif
    endif
 
-    call fv_tp_2d(vort, crx_adv, cry_adv, npx, npy, hord_vt, fx, fy, &
+   !if(flagstruct%adv_scheme==1) then
+      call fv_tp_2d(vort, crx_adv, cry_adv, npx, npy, hord_vt, fx, fy, &
                   xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac)
+
+   !else if(flagstruct%adv_scheme==2) then
+   !   call fv_tp_2d(vort, crx_rk2, cry_rk2, npx, npy, hord_vt, fx, fy, &
+   !               xfx_rk2,yfx_rk2, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, advscheme=flagstruct%adv_scheme)
+   !endif
+
     do j=js,je+1
        do i=is,ie
           u(i,j) = vt(i,j) + ke(i,j) - ke(i+1,j) + fy(i,j)
@@ -2926,7 +2995,7 @@ end subroutine ytp_v
 !   is needed after c_sw is completed if these variables are needed
 !    in the halo
  subroutine d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, &
-                       bd, npx, npy, bounded_domain, grid_type)
+                       bd, npx, npy, bounded_domain, grid_type, k)
   type(fv_grid_bounds_type), intent(IN) :: bd
   logical, intent(in):: dord4
   real, intent(in) ::  u(bd%isd:bd%ied,bd%jsd:bd%jed+1)
@@ -2934,7 +3003,7 @@ end subroutine ytp_v
   real, intent(out), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: uc
   real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: vc
   real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed  ):: ua, va, ut, vt
-  integer, intent(IN) :: npx, npy, grid_type
+  integer, intent(IN) :: npx, npy, grid_type, k
   logical, intent(IN) :: bounded_domain
   type(fv_grid_type), intent(IN), target :: gridstruct
 ! Local
@@ -2984,7 +3053,6 @@ end subroutine ytp_v
   vtmp(:,:) = big_number
 
  if ( bounded_domain) then
-
      do j=jsd+1,jed-1
         do i=isd,ied
            utmp(i,j) = a2*(u(i,j-1)+u(i,j+2)) + a1*(u(i,j)+u(i,j+1))
@@ -3116,7 +3184,8 @@ end subroutine ytp_v
 !---------------------------------------------
 ! 4th order interpolation for interior points:
 !---------------------------------------------
-     do j=js-1,je+1
+     !do j=js-1,je+1
+     do j=jsd,jed
         do i=ifirst,ilast
            uc(i,j) = a2*(utmp(i-2,j)+utmp(i+1,j)) + a1*(utmp(i-1,j)+utmp(i,j))
            ut(i,j) = (uc(i,j) - v(i,j)*cosa_u(i,j))*rsin_u(i,j)
@@ -3257,7 +3326,7 @@ end subroutine ytp_v
  else
 ! 4th order interpolation:
        do j=js-1,je+2
-          do i=is-1,ie+1
+          do i=isd,ied
              vc(i,j) = a2*(vtmp(i,j-2)+vtmp(i,j+1)) + a1*(vtmp(i,j-1)+vtmp(i,j))
              vt(i,j) = vc(i,j)
           enddo
@@ -3475,5 +3544,220 @@ end subroutine ytp_v
   end select
 
  end subroutine fill_4corners
+
+ subroutine compute_ut_vt( uc, vc, ut, vt, dt, gridstruct, flagstruct, bd)
+    real   , intent(IN):: dt
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    real, intent(IN), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: vc
+    real, intent(IN), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: uc
+    real,intent(out) :: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+    real,intent(out) :: vt(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
+    type(fv_grid_type), intent(IN), target :: gridstruct
+    type(fv_flags_type), intent(IN), target :: flagstruct
+    ! Local:
+    logical:: sw_corner, se_corner, ne_corner, nw_corner
+    real :: damp
+    integer :: i,j, iq
+    real, pointer, dimension(:,:,:) :: sin_sg
+    real, pointer, dimension(:,:)   :: cosa_u, cosa_v
+    real, pointer, dimension(:,:)   :: sina_u, sina_v
+    real, pointer, dimension(:,:)   :: rsin_u, rsin_v
+
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+    integer :: h
+    logical :: bounded_domain
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd = bd%isd
+    ied = bd%ied
+    jsd = bd%jsd
+    jed = bd%jed
+
+    bounded_domain = gridstruct%bounded_domain
+
+    cosa_u    => gridstruct%cosa_u
+    cosa_v    => gridstruct%cosa_v
+    sina_u    => gridstruct%sina_u
+    sina_v    => gridstruct%sina_v
+    rsin_u    => gridstruct%rsin_u
+    rsin_v    => gridstruct%rsin_v
+
+    if (flagstruct%grid_type==4) then
+       h = 1
+       do j=jsd,jed
+          do i=is-h,ie+h+1
+             ut(i,j) = ( uc(i,j) - 0.25 * cosa_u(i,j) *     &
+                  (vc(i-1,j)+vc(i,j)+vc(i-1,j+1)+vc(i,j+1)))*rsin_u(i,j)
+          enddo
+       enddo
+       do j=js-h,je+h+1
+          do i=isd,ied
+             vt(i,j) = ( vc(i,j) - 0.25 * cosa_v(i,j) *     &
+                  (uc(i,j-1)+uc(i+1,j-1)+uc(i,j)+uc(i+1,j)))*rsin_v(i,j)
+          enddo
+       enddo
+    else
+       call mpp_error(FATAL, "compute_ut_vt: invalid grid_type")
+    endif
+ end subroutine compute_ut_vt
+
+ subroutine departure_cfl_rk2(gridstruct, flagstruct, bd, crx, cry, &
+                             uc_old, vc_old, uc, vc, dt)
+    !--------------------------------------------------
+    ! Compute the departure CFL for RK2 scheme
+    !--------------------------------------------------
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    type(fv_grid_type), intent(IN), target :: gridstruct 
+    type(fv_flags_type), intent(IN), target :: flagstruct
+
+    real, intent(INOUT), dimension(bd%is:bd%ie+1, bd%jsd:bd%jed  ) :: crx
+    real, intent(INOUT), dimension(bd%isd:bd%ied, bd%js:bd%je+1  ) :: cry
+
+    real, intent(IN)   , dimension(bd%isd:bd%ied+1, bd%jsd:bd%jed  ) :: uc_old
+    real, intent(IN)   , dimension(bd%isd:bd%ied  , bd%jsd:bd%jed+1) :: vc_old
+
+    real, intent(IN)   , dimension(bd%isd:bd%ied+1, bd%jsd:bd%jed  ) :: uc
+    real, intent(IN)   , dimension(bd%isd:bd%ied  , bd%jsd:bd%jed+1) :: vc
+
+    real, dimension(bd%is:bd%ie+1  , bd%jsd:bd%jed  ) :: crx_old
+    real, dimension(bd%isd:bd%ied  , bd%js:bd%je+1  ) :: cry_old
+
+    real, dimension(bd%isd:bd%ied+1, bd%jsd:bd%jed  ) :: uc_av
+    real, dimension(bd%isd:bd%ied  , bd%jsd:bd%jed+1) :: vc_av
+ 
+    real, pointer, dimension(:,:) :: rdxa , rdya
+    real, pointer, dimension(:,:) :: rdxc , rdyc
+    real, pointer, dimension(:,:) :: rnorm_tgx_c, rnorm_tgy_d
+    real, pointer, dimension(:,:) ::  norm_tgx_c,  norm_tgy_d
+    real, intent(IN) :: dt
+
+    ! aux
+    real :: a, a1, a2, c1, c2, u1, u2, v1, v2
+    integer :: i, j
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd = bd%isd
+    ied = bd%ied
+    jsd = bd%jsd
+    jed = bd%jed
+
+    rdxc => gridstruct%rdx
+    rdyc => gridstruct%rdy
+    rdxa => gridstruct%rdxa
+    rdya => gridstruct%rdya
+
+
+
+    if (flagstruct%grid_type==4) then
+       ! RK2
+       do j = jsd, jed
+          do i = is, ie+1
+             ! Upwind linear interpolation
+             if (uc_old(i,j)>0.d0) then
+                u1 = uc(i-1,j)
+                u2 = uc(i  ,j)
+                a  = uc_old(i,j)*dt*rdxa(i-1,j)*0.5d0
+                a1 = a
+                a2 = 1.d0-a
+             else
+                u1 = uc(i  ,j)
+                u2 = uc(i+1,j)
+                a  = uc_old(i,j)*dt*rdxa(i,j)*0.5d0
+                a1 = 1.d0+a
+                a2 = -a
+             end if
+             uc_av(i,j) = a1*u1 + a2*u2
+             crx(i,j) = uc_av(i,j)*dt*rdxc(i,j)
+          end do
+       end do
+
+       ! cfl for dp in y direction
+       do j = js, je+1
+          do i = isd, ied
+             ! Upwind linear interpolation
+             if (vc_old(i,j)>0.d0) then
+                v1 = vc(i,j-1)
+                v2 = vc(i,j  )
+                a  = vc_old(i,j)*dt*rdya(i,j-1)*0.5d0
+                a1 = a
+                a2 = 1.d0-a
+             else
+                v1 = vc(i,j  )
+                v2 = vc(i,j+1)
+                a  = vc_old(i,j)*dt*rdya(i,j)*0.5d0
+                a1 = 1.d0+a
+                a2 = -a
+             end if
+             vc_av(i,j) = a1*v1 + a2*v2
+             cry(i,j) = vc_av(i,j)*dt*rdyc(i,j)
+          end do
+       end do
+    else
+       call mpp_error(FATAL, "departure_cfl_rk2: invalid grid_type")
+    endif
+
+ end subroutine departure_cfl_rk2
+
+ subroutine compute_xfx_yfx_rk2(gridstruct, flagstruct, bd, crx, cry, xfx, yfx)
+    !--------------------------------------------------
+    ! Compute coefficients xfx and yfx
+    !
+    !--------------------------------------------------
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    type(fv_grid_type), intent(IN), target :: gridstruct 
+    type(fv_flags_type), intent(IN), target :: flagstruct
+
+    real, intent(IN)   , dimension(bd%is:bd%ie+1  , bd%jsd:bd%jed  ) :: crx
+    real, intent(INOUT), dimension(bd%is:bd%ie+1  , bd%jsd:bd%jed  ) :: xfx
+
+    real, intent(IN)   , dimension(bd%isd:bd%ied  , bd%js:bd%je+1  ) :: cry
+    real, intent(INOUT), dimension(bd%isd:bd%ied  , bd%js:bd%je+1  ) :: yfx
+
+    ! aux
+    integer :: i, j
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+    real, pointer, dimension(:,:) :: dxa, dya
+    real, pointer, dimension(:,:) :: dxc, dyc
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd = bd%isd
+    ied = bd%ied
+    jsd = bd%jsd
+    jed = bd%jed
+
+    dxa => gridstruct%dxa
+    dya => gridstruct%dya
+    dxc => gridstruct%dx
+    dyc => gridstruct%dy
+ 
+    do j=jsd,jed
+    !DEC$ VECTOR ALWAYS
+       do i=is,ie+1
+          xfx(i,j) = crx(i,j)*dxc(i,j)*dya(i,j)
+       enddo
+
+    enddo
+    do j=js,je+1
+    !DEC$ VECTOR ALWAYS
+       do i=isd,ied
+          yfx(i,j) = cry(i,j)*dxa(i,j)*dyc(i,j)
+       enddo
+    enddo
+
+
+ end subroutine compute_xfx_yfx_rk2
 
  end module sw_core_mod

@@ -26,6 +26,7 @@ module tp_core_mod
 !
  use fv_grid_utils_mod, only: big_number
  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type
+ use mpp_mod, only: mpp_pe !DEBUG
 
  implicit none
 
@@ -79,7 +80,7 @@ contains
 
  subroutine fv_tp_2d(q, crx, cry, npx, npy, hord, fx, fy, xfx, yfx,  &
                      gridstruct, bd, ra_x, ra_y, lim_fac, mfx, mfy, &
-                     mass, nord, damp_c, damp_smag, damp_Km)
+                     mass, nord, damp_c, damp_smag, damp_Km, advscheme)
    type(fv_grid_bounds_type), intent(IN) :: bd
    integer, intent(in):: npx, npy
    integer, intent(in)::hord
@@ -103,11 +104,13 @@ contains
    real, OPTIONAL, intent(in):: mass(bd%isd:bd%ied,bd%jsd:bd%jed)
    real, OPTIONAL, intent(in):: damp_c
    integer, OPTIONAL, intent(in):: nord
+   integer, OPTIONAL, intent(in):: advscheme
    real, OPTIONAL, intent(in) :: damp_smag ! additional 2nd-order flux
    real, OPTIONAL, intent(in) :: damp_Km(bd%isd:bd%ied,bd%jsd:bd%jed) ! variable diffusion coeff for scalars
                                                                       ! First try adapts cell-centered eddy diffusivities
 ! Local:
    integer ord_ou, ord_in
+   integer adv_scheme
    real q_i(bd%isd:bd%ied,bd%js:bd%je)
    real q_j(bd%is:bd%ie,bd%jsd:bd%jed)
    real   fx2(bd%is:bd%ie+1,bd%jsd:bd%jed)
@@ -128,6 +131,15 @@ contains
    jsd = bd%jsd
    jed = bd%jed
 
+   !if(mpp_pe()==0)then
+   
+   !endif
+   if(.not. present(advscheme)) then
+      adv_scheme = 1
+   else
+      adv_scheme = advscheme
+   endif
+
    if ( hord == 10 ) then
         ord_in = 8
    else
@@ -139,41 +151,78 @@ contains
       call copy_corners(q, npx, npy, 2, gridstruct%bounded_domain, bd, &
                          gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
-   call yppm(fy2, q, cry, ord_in, isd,ied,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dya, &
-             gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   if(adv_scheme==1) then
+      call yppm(fy2, q, cry, ord_in, isd,ied,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dya, &
+                gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   else if(adv_scheme==2) then
+      call yppm(fy2, q, cry, ord_in, isd,ied,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dya, &
+                gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   endif
 
    do j=js,je+1
       do i=isd,ied
          fyy(i,j) = yfx(i,j) * fy2(i,j)
       enddo
    enddo
-   do j=js,je
-      do i=isd,ied
-         q_i(i,j) = (q(i,j)*gridstruct%area(i,j) + fyy(i,j)-fyy(i,j+1))/ra_y(i,j)
-      enddo
-   enddo
 
-   call xppm(fx, q_i, crx(is,js), ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx,npy, &
+   if(adv_scheme==1) then
+      do j=js,je
+         do i=isd,ied
+            q_i(i,j) = (q(i,j)*gridstruct%area(i,j) + fyy(i,j)-fyy(i,j+1))/ra_y(i,j)
+         enddo
+      enddo
+      call xppm(fx, q_i, crx(is,js), ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx,npy, &
              gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+
+   else if(adv_scheme==2) then
+      do j=js,je
+         do i=isd,ied
+            q_i(i,j) = q(i,j) -(fyy(i,j+1)-fyy(i,j))*gridstruct%rarea(i,j)
+         enddo
+      enddo
+      call xppm(fx, q_i, crx(is,js), ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx,npy, &
+             gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   endif
 
    if (.not. gridstruct%bounded_domain) &
      call copy_corners(q, npx, npy, 1, gridstruct%bounded_domain, bd, &
                        gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
-   call xppm(fx2, q, crx, ord_in, is,ie,isd,ied, jsd,jed,jsd,jed, npx,npy, gridstruct%dxa, &
-             gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
 
-   do j=jsd,jed
-      do i=is,ie+1
-         fx1(i) =  xfx(i,j) * fx2(i,j)
-      enddo
-      do i=is,ie
-         q_j(i,j) = (q(i,j)*gridstruct%area(i,j) + fx1(i)-fx1(i+1))/ra_x(i,j)
-      enddo
-   enddo
 
-   call yppm(fy, q_j, cry, ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx, npy, gridstruct%dya, &
-             gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   if(adv_scheme==1) then
+      call xppm(fx2, q, crx, ord_in, is,ie,isd,ied, jsd,jed,jsd,jed, npx,npy, gridstruct%dxa, &
+                gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   else if(adv_scheme==2) then
+      call xppm(fx2, q, crx, ord_in, is,ie,isd,ied, jsd,jed,jsd,jed, npx,npy, gridstruct%dxa, &
+                gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   endif
+
+   if(adv_scheme==1) then
+      do j=jsd,jed
+         do i=is,ie+1
+            fx1(i) =  xfx(i,j) * fx2(i,j)
+         enddo
+         do i=is,ie
+            q_j(i,j) = (q(i,j)*gridstruct%area(i,j) + fx1(i)-fx1(i+1))/ra_x(i,j)
+         enddo
+      enddo
+      call yppm(fy, q_j, cry, ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx, npy, gridstruct%dya, &
+                gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+
+   else if(adv_scheme==2) then
+      do j=jsd,jed
+         do i=is,ie+1
+            fx1(i) =  xfx(i,j) * fx2(i,j)
+         enddo
+         do i=is,ie
+            q_j(i,j) =  q(i,j)-(fx1(i+1)-fx1(i))*gridstruct%rarea(i,j)
+         enddo
+      enddo
+      call yppm(fy, q_j, cry, ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx, npy, gridstruct%dya, &
+                gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   endif
+
 
 !----------------
 ! Flux averaging:
