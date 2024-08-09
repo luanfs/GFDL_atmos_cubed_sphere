@@ -79,7 +79,7 @@ module sw_core_mod
    !subroutine c_sw(delpc, delp, ptc, pt, u,v, w, uc,vc, ua,va, wc,  &
    subroutine c_sw(delpc, delp, ptc, pt, u,v, w, uc,vc, uc_old,vc_old, ua,va, wc,  &
                    ut, vt, divg_d, nord, dt2, hydrostatic, dord4, &
-                   bd, gridstruct, flagstruct, k)
+                   bd, gridstruct, flagstruct)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1) :: u, vc, vc_old
@@ -90,7 +90,6 @@ module sw_core_mod
       real, intent(OUT  ), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed  ) :: delpc, ptc, wc
       real, intent(OUT  ), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) :: divg_d
       integer, intent(IN) :: nord
-      integer, intent(IN) :: k
       real,    intent(IN) :: dt2
       logical, intent(IN) :: hydrostatic
       logical, intent(IN) :: dord4
@@ -149,7 +148,7 @@ module sw_core_mod
       iep1 = ie+1; jep1 = je+1
  
      call d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, bd, &
-                     npx, npy, bounded_domain, flagstruct%grid_type, k)
+                     npx, npy, bounded_domain, flagstruct%grid_type)
 
 
       if(flagstruct%adv_scheme==2)then
@@ -2995,7 +2994,7 @@ end subroutine ytp_v
 !   is needed after c_sw is completed if these variables are needed
 !    in the halo
  subroutine d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, &
-                       bd, npx, npy, bounded_domain, grid_type, k)
+                       bd, npx, npy, bounded_domain, grid_type)
   type(fv_grid_bounds_type), intent(IN) :: bd
   logical, intent(in):: dord4
   real, intent(in) ::  u(bd%isd:bd%ied,bd%jsd:bd%jed+1)
@@ -3003,7 +3002,7 @@ end subroutine ytp_v
   real, intent(out), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: uc
   real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: vc
   real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed  ):: ua, va, ut, vt
-  integer, intent(IN) :: npx, npy, grid_type, k
+  integer, intent(IN) :: npx, npy, grid_type
   logical, intent(IN) :: bounded_domain
   type(fv_grid_type), intent(IN), target :: gridstruct
 ! Local
