@@ -191,6 +191,7 @@ module fv_control_mod
      real(kind=R_GRID) , pointer :: stretch_fac
      real(kind=R_GRID) , pointer :: target_lat
      real(kind=R_GRID) , pointer :: target_lon
+     integer , pointer :: adv_scheme
 
      logical , pointer :: reset_eta
      logical , pointer :: ignore_rst_cksum
@@ -729,6 +730,7 @@ module fv_control_mod
        stretch_fac                   => Atm%flagstruct%stretch_fac
        target_lat                    => Atm%flagstruct%target_lat
        target_lon                    => Atm%flagstruct%target_lon
+       adv_scheme                    => Atm%flagstruct%adv_scheme
        regional                      => Atm%flagstruct%regional
        bc_update_interval            => Atm%flagstruct%bc_update_interval
        nrows_blend                   => Atm%flagstruct%nrows_blend
@@ -943,7 +945,7 @@ module fv_control_mod
             warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
             dry_mass, grid_type, do_Held_Suarez, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
-            range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
+            range_warn, dwind_2d, inline_q, adv_scheme,  z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
             tau, fast_tau_w_sec, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
