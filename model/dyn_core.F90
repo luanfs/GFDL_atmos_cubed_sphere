@@ -231,6 +231,10 @@ contains
     iep1 = ie + 1
     jep1 = je + 1
 
+    if(mpp_pe()==0)then
+      print*, 'time in days: ', time_total/86400d0, 'adv', flagstruct%adv_scheme
+    endif
+
     if ( .not.hydrostatic ) then
 
          rgrav = 1.0/grav
@@ -579,7 +583,6 @@ contains
 
     if(flagstruct%adv_scheme==2)then
       call timing_on('COMM_TOTAL')
-
       call start_group_halo_update(i_pack(14), uc_old, vc_old, domain, gridtype=CGRID_NE)
       call timing_off('COMM_TOTAL')
     endif
@@ -1398,8 +1401,6 @@ contains
 
   endif
   if( allocated(pem) )   deallocate ( pem )
-  !print*,'BYE'
-  !stop
 end subroutine dyn_core
 
 subroutine pk3_halo(is, ie, js, je, isd, ied, jsd, jed, npz, ptop, akap, pk3, delp)
