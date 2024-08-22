@@ -232,7 +232,7 @@ contains
     jep1 = je + 1
 
     if(mpp_pe()==0)then
-      print*, 'time in days: ', time_total/86400d0, 'adv', flagstruct%adv_scheme
+      print*, 'time in days: ', time_total/86400d0, 'adv', flagstruct%adv_scheme, 'hord', hord_m
     endif
 
     if ( .not.hydrostatic ) then
