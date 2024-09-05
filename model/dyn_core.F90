@@ -232,7 +232,7 @@ contains
     jep1 = je + 1
 
     if(mpp_pe()==0)then
-      print*, 'time in days: ', time_total/86400d0, 'adv', flagstruct%adv_scheme, 'hord', hord_m
+      print*, 'time in days: ', time_total/86400d0, 'adv', flagstruct%adv_scheme, 'hord', flagstruct%hord_mt
     endif
 
     if ( .not.hydrostatic ) then
@@ -581,11 +581,11 @@ contains
       call start_group_halo_update(i_pack(9), uc, vc, domain, gridtype=CGRID_NE)
       call timing_off('COMM_TOTAL')
 
-    if(flagstruct%adv_scheme==2)then
+    !if(flagstruct%adv_scheme==2)then
       call timing_on('COMM_TOTAL')
       call start_group_halo_update(i_pack(14), uc_old, vc_old, domain, gridtype=CGRID_NE)
       call timing_off('COMM_TOTAL')
-    endif
+    !endif
 
 #ifdef SW_DYNAMICS
       if (test_case==9) call case9_forcing2(phis, isd, ied, jsd, jed)
@@ -602,9 +602,9 @@ contains
                         if (flagstruct%nord > 0) call complete_group_halo_update(i_pack(3), domain)
                                                  call complete_group_halo_update(i_pack(9), domain)
 
-    if(flagstruct%adv_scheme==2)then
+    !if(flagstruct%adv_scheme==2)then
                         if (flagstruct%nord > 0) call complete_group_halo_update(i_pack(14), domain)
-    endif
+    !endif
 
 #ifdef SW_DYNAMICS
     endif

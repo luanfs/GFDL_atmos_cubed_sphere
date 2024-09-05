@@ -95,7 +95,7 @@ module fv_diagnostics_mod
 
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
  public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field, get_height_given_pressure
- public :: cs3_interpolator, get_vorticity
+ public :: cs3_interpolator, get_vorticity, get_divergence
 ! needed by fv_nggps_diag
  public :: max_vv, max_uh, bunkers_vector, helicity_relative_CAPS
  public :: max_vorticity
@@ -1014,6 +1014,13 @@ contains
           !--------------------
           id_vort = register_diag_field ( trim(field), 'vort', axes(1:3), Time,       &
                'vorticity', '1/s', missing_value=missing_value )
+
+          !--------------------
+          ! Divergence
+          !--------------------
+          id_div = register_diag_field ( trim(field), 'div', axes(1:3), Time,       &
+               'divergence', '1/s', missing_value=missing_value )
+ 
           !--------------------
           ! Potential vorticity
           !--------------------
@@ -1117,6 +1124,8 @@ contains
 ! Surface (lowest layer) vorticity: for tropical cyclones diag.
        id_vorts = register_diag_field ( trim(field), 'vorts', axes(1:2), Time,       &
             'surface vorticity', '1/s', missing_value=missing_value )
+       id_divs = register_diag_field ( trim(field), 'divs', axes(1:2), Time,       &
+            'surface divergence', '1/s', missing_value=missing_value )
        id_us = register_diag_field ( trim(field), 'us', axes(1:2), Time,        &
             'surface u-wind', 'm/sec', missing_value=missing_value, range=vsrange )
        id_vs = register_diag_field ( trim(field), 'vs', axes(1:2), Time,        &
@@ -1176,6 +1185,16 @@ contains
 
        id_vort200 = register_diag_field ( trim(field), 'vort200', axes(1:2), Time,       &
                            '200-mb vorticity', '1/s', missing_value=missing_value )
+!--------------------------
+! 850-mb divergence
+!--------------------------
+ 
+       id_div850 = register_diag_field ( trim(field), 'div850', axes(1:2), Time,       &
+                           '850-mb divergence', '1/s', missing_value=missing_value )
+
+       id_div200 = register_diag_field ( trim(field), 'div200', axes(1:2), Time,       &
+                           '200-mb divergence', '1/s', missing_value=missing_value )
+
 
 ! Cubed_2_latlon interpolation is more accurate, particularly near the poles, using
 ! winds speed (a scalar), rather than wind vectors or kinetic energy directly.
@@ -1195,6 +1214,10 @@ contains
 
        id_vort500 = register_diag_field ( trim(field), 'vort500', axes(1:2), Time,       &
                            '500-mb vorticity', '1/s', missing_value=missing_value )
+
+       id_div500 = register_diag_field ( trim(field), 'divergence', axes(1:2), Time,       &
+                           '500-mb divergence', '1/s', missing_value=missing_value )
+
 
        id_rain5km = register_diag_field ( trim(field), 'rain5km', axes(1:2), Time,       &
                            '5-km AGL liquid water', 'kg/kg', missing_value=missing_value )
@@ -1539,7 +1562,7 @@ contains
     integer :: isd, ied, jsd, jed, npz, itrac
     integer :: ngc, nwater
 
-    real, allocatable :: a2(:,:),a3(:,:,:),a4(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
+    real, allocatable :: a2(:,:),a3(:,:,:),a4(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:), div(:,:,:)
     real, allocatable :: ustm(:,:), vstm(:,:)
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
     real, allocatable :: u2(:,:), v2(:,:), x850(:,:), var1(:,:), var2(:,:), var3(:,:)
@@ -1755,6 +1778,7 @@ contains
     allocate ( u2(isc:iec,jsc:jec) )
     allocate ( v2(isc:iec,jsc:jec) )
     allocate ( wk(isc:iec,jsc:jec,npz) )
+    allocate ( div(isc:iec,jsc:jec,npz) )
     if ( any(id_tracer_dmmr > 0) .or. any(id_tracer_dvmr > 0) ) then
         allocate ( dmmr(isc:iec,jsc:jec,1:npz) )
         allocate ( dvmr(isc:iec,jsc:jec,1:npz) )
@@ -1853,6 +1877,37 @@ contains
           enddo
        endif
 
+
+       if ( id_div200>0 .or. id_div500>0 .or. id_div850>0 .or. id_divs>0 .or. id_div>0 ) then
+          call get_divergence(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%uc_old, Atm(n)%vc_old, div, &
+               Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, &
+               Atm(n)%gridstruct%rsin_u, Atm(n)%gridstruct%rsin_v, &
+               Atm(n)%gridstruct%sina_u, Atm(n)%gridstruct%sina_v, &
+               Atm(n)%gridstruct%cosa_u, Atm(n)%gridstruct%cosa_v, Atm(n)%gridstruct%rarea)
+
+          if(id_div >0) used=send_data(id_div,  div, Time)
+          if(id_divs>0) used=send_data(id_divs, div(isc:iec,jsc:jec,npz), Time)
+
+          if( id_div200>0 ) then
+             call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                       200.e2, Atm(n)%peln, div, a2)
+             used=send_data(id_div200, a2, Time)
+          endif
+          if( id_div500>0 ) then
+             call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                       500.e2, Atm(n)%peln, div, a2)
+             used=send_data(id_div500, a2, Time)
+          endif
+
+          if(id_div850>0) then
+             call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                       850.e2, Atm(n)%peln, div, a2)
+             used=send_data(id_div850, a2, Time)
+          endif
+
+
+       endif
+
        if ( id_vort200>0 .or. id_vort500>0 .or. id_vort850>0 .or. id_vorts>0   &
             .or. id_vort>0 .or. id_pv>0 .or. id_pv350k>0 .or. id_pv550k>0 &
             .or. id_rh>0 .or. id_x850>0 .or. id_uh03>0 .or. id_uh25>0 &
@@ -1902,6 +1957,7 @@ contains
              endif
 
           endif
+
 
           if( .not. Atm(n)%flagstruct%hydrostatic ) then
 
@@ -4187,6 +4243,7 @@ contains
     deallocate ( u2 )
     deallocate ( v2 )
     deallocate ( wk )
+    deallocate ( div )
 
     if (allocated(a3)) deallocate(a3)
     if (allocated(wz)) deallocate(wz)
@@ -4261,6 +4318,49 @@ contains
       enddo
 
  end subroutine get_vorticity
+
+ subroutine get_divergence(isc, iec, jsc, jec ,isd, ied, jsd, jed, npz, uc, vc, div, dx, dy,&
+                           rsin_u, rsin_v, sina_u, sina_v, cosa_u, cosa_v, rarea)
+ integer isd, ied, jsd, jed, npz
+ integer isc, iec, jsc, jec
+ real, intent(in)  :: uc(isd:ied, jsd:jed+1, npz), vc(isd:ied+1, jsd:jed, npz)
+ real, intent(out) :: div(isc:iec, jsc:jec, npz)
+ real, intent(IN) :: dx(isd:ied,jsd:jed+1)
+ real, intent(IN) :: dy(isd:ied+1,jsd:jed)
+ real, intent(IN) :: rsin_u(isd:ied+1,jsd:jed)
+ real, intent(IN) :: rsin_v(isd:ied,jsd:jed+1)
+ real, intent(IN) :: sina_u(isd:ied+1,jsd:jed)
+ real, intent(IN) :: sina_v(isd:ied,jsd:jed+1)
+ real, intent(IN) :: cosa_u(isd:ied+1,jsd:jed)
+ real, intent(IN) :: cosa_v(isd:ied,jsd:jed+1)
+ real, intent(IN) :: rarea(isd:ied,jsd:jed)
+ real :: ut(isd:ied, jsd:jed+1), vt(isd:ied+1, jsd:jed)
+ integer :: i,j,k
+
+      do k=1,npz
+         do j=jsc,jec
+            do i=isc,iec+1
+               ut(i,j) = ( uc(i,j,k) - 0.25 * cosa_u(i,j) *     &
+                         (vc(i-1,j,k)+vc(i,j,k)+vc(i-1,j+1,k)+vc(i,j+1,k)))*rsin_u(i,j)
+            enddo
+         enddo
+
+         do j=jsc,jec+1
+            do i=isc,iec
+               vt(i,j) = ( vc(i,j,k) - 0.25 * cosa_v(i,j) *     &
+                         (uc(i,j-1,k)+uc(i+1,j-1,k)+uc(i,j,k)+uc(i+1,j,k)))*rsin_v(i,j)
+            enddo
+         enddo
+
+         do j = jsc, jec
+            do i = isc, iec
+               div(i,j,k) = rarea(i,j)*(ut(i+1,j)*sina_u(i+1,j)*dy(i+1,j) - ut(i,j)*sina_u(i,j)*dy(i,j) + &
+                                        vt(i,j+1)*sina_v(i,j+1)*dx(i,j+1) - vt(i,j)*sina_v(i,j)*dx(i,j))
+            enddo
+         enddo
+      enddo
+
+ end subroutine get_divergence
 
 
  subroutine get_height_field(is, ie, js, je, ng, km, hydrostatic, delz, wz, pt, q, peln, zvir)

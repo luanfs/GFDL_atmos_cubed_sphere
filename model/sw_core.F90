@@ -151,7 +151,7 @@ module sw_core_mod
                      npx, npy, bounded_domain, flagstruct%grid_type)
 
 
-      if(flagstruct%adv_scheme==2)then
+      !if(flagstruct%adv_scheme==2)then
          do j = jsd, jed
             do i = is, ie+1
                uc_old(i,j) = uc(i,j) 
@@ -163,7 +163,7 @@ module sw_core_mod
                vc_old(i,j) = vc(i,j) 
             enddo
          enddo
-      endif
+      !endif
     
       if( nord > 0 ) then
          if (bounded_domain) then

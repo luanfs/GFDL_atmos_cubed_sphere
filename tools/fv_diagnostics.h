@@ -22,9 +22,9 @@
 #ifndef _FV_DIAG__
 #define _FV_DIAG__
 
- integer ::id_ps, id_slp, id_ua, id_va, id_pt, id_omga, id_vort,  &
+ integer ::id_ps, id_slp, id_ua, id_va, id_pt, id_omga, id_vort, id_div, &
       id_tm, id_pv, id_zsurf, id_oro, id_sgh, id_w, &
-           id_ke, id_zs, id_ze, id_mq, id_vorts, id_us, id_vs,    &
+           id_ke, id_zs, id_ze, id_mq, id_vorts, id_divs, id_us, id_vs,    &
            id_tq, id_rh, id_c15, id_c25, id_c35, id_c45,          &
                          id_f15, id_f25, id_f35, id_f45, id_ctp,  &
            id_ppt, id_ts, id_tb, id_ctt, id_pmask, id_pmaskv2,    &
@@ -40,6 +40,7 @@
 
 ! Selected p-level fields from 3D variables:
  integer :: id_vort200, id_vort500, id_w500, id_w700
+ integer :: id_div200, id_div500, id_div850
  integer :: id_vort850, id_w850, id_x850, id_srh25, &
             id_uh03, id_uh25, id_theta_e,  &
             id_w200, id_s200, id_sl12, id_sl13, id_w5km, id_rain5km, id_w2500m
