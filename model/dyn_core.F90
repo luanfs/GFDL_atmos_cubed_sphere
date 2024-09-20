@@ -231,9 +231,10 @@ contains
     iep1 = ie + 1
     jep1 = je + 1
 
-    if(mpp_pe()==0)then
-      print*, 'time in days: ', time_total/86400d0, 'adv', flagstruct%adv_scheme, 'hord', flagstruct%hord_mt
-    endif
+    !if(mpp_pe()==0)then
+    !  print*, 'time in days: ', time_total/86400d0, 'adv', flagstruct%adv_scheme, 'hord', flagstruct%hord_mt
+    !  print*, maxval(abs(pt))
+    !endif
 
     if ( .not.hydrostatic ) then
 
