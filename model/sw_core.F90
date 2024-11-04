@@ -1536,14 +1536,16 @@ module sw_core_mod
     endif
    endif
 
-   !if(flagstruct%adv_scheme==1) then
+   if(flagstruct%adv_scheme==1) then
       call fv_tp_2d(vort, crx_adv, cry_adv, npx, npy, hord_vt, fx, fy, &
                   xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac)
 
-   !else if(flagstruct%adv_scheme==2) then
-   !   call fv_tp_2d(vort, crx_rk2, cry_rk2, npx, npy, hord_vt, fx, fy, &
-   !               xfx_rk2,yfx_rk2, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, advscheme=flagstruct%adv_scheme)
-   !endif
+   else if(flagstruct%adv_scheme==2) then
+      call fv_tp_2d(vort, crx_rk2, cry_rk2, npx, npy, hord_vt, fx, fy, &
+                  xfx_rk2,yfx_rk2, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+                  advscheme=flagstruct%adv_scheme)
+ 
+   endif
 
     do j=js,je+1
        do i=is,ie
