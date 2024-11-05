@@ -1048,40 +1048,94 @@ module sw_core_mod
 !       enddo
 !    endif
 #if defined(GFS_PHYS) || defined(DCMIP)
-        call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
-                      xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                      mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v) !SHiELD
+        if(flagstruct%adv_scheme==1)then
+           call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
+                         xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+                         mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v) !SHiELD
+
+        else if(flagstruct%adv_scheme==2)then
+           do j=jsd,jed
+              do i=isd,ied
+                 pt(i,j) = delp(i,j)*pt(i,j)
+              enddo
+           enddo
+
+           call fv_tp_2d(pt, crx_rk2,cry_rk2, npx, npy, hord_tm, gx, gy,  &
+                   xfx_rk2,yfx_rk2, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+                   nord=nord_v, damp_c=damp_v, advscheme=flagstruct%adv_scheme) !SHiELD
+        endif
 #else
-        call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
-                      xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                      mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t) !AM4
+        if(flagstruct%adv_scheme==1)then
+           call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
+                         xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+                         mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t) !AM4
+
+        else if(flagstruct%adv_scheme==2)then
+           do j=jsd,jed
+              do i=isd,ied
+                 pt(i,j) = delp(i,j)*pt(i,j)
+              enddo
+           enddo
+
+           call fv_tp_2d(pt, crx_rk2,cry_rk2, npx, npy, hord_tm, gx, gy,  &
+                         xfx_rk2,yfx_rk2, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+                         nord=nord_t, damp_c=damp_t, advscheme=flagstruct%adv_scheme) !SHiELD
+        endif
+
 #endif
 #endif
 
      if ( inline_q ) then
-        do j=js,je
-           do i=is,ie
-                wk(i,j) = delp(i,j)
-              delp(i,j) = wk(i,j) + (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
-#ifdef SW_DYNAMICS
-              ptc(i,j) = pt(i,j)
-#else
-              pt(i,j) = (pt(i,j)*wk(i,j) +               &
-                        (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j))/delp(i,j)
-#endif
-           enddo
-        enddo
-        do iq=1,nq
-           call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
-                         xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                         mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
+        if(flagstruct%adv_scheme==1) then
            do j=js,je
               do i=is,ie
-                 q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
-                         (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j))/delp(i,j)
+                   wk(i,j) = delp(i,j)
+                 delp(i,j) = wk(i,j) + (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
+#ifdef SW_DYNAMICS
+                 ptc(i,j) = pt(i,j)
+#else
+                 pt(i,j) = (pt(i,j)*wk(i,j) +               &
+                           (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j))/delp(i,j)
+#endif
               enddo
            enddo
-        enddo
+           do iq=1,nq
+              call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
+                            xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+                            mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
+              do j=js,je
+                 do i=is,ie
+                    q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
+                            (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j))/delp(i,j)
+                 enddo
+              enddo
+           enddo
+
+        else if(flagstruct%adv_scheme==2) then
+           do j=js,je
+              do i=is,ie
+                   wk(i,j) = delp(i,j)
+                 delp(i,j) = wk(i,j) + (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
+#ifdef SW_DYNAMICS
+                 ptc(i,j) = pt(i,j)
+#else
+                 pt(i,j) = (pt(i,j) +               &
+                           (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j))/delp(i,j)
+#endif
+              enddo
+           enddo
+           do iq=1,nq
+              call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
+                            xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+                            mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
+              do j=js,je
+                 do i=is,ie
+                    q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
+                            (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j))/delp(i,j)
+                 enddo
+              enddo
+           enddo
+        endif
 !     if ( zvir>0.01 ) then
 !       do j=js,je
 !          do i=is,ie
@@ -1091,20 +1145,37 @@ module sw_core_mod
 !     endif
 
      else
-        do j=js,je
-           do i=is,ie
+        if(flagstruct%adv_scheme==1) then
+           do j=js,je
+              do i=is,ie
 #ifndef SW_DYNAMICS
-              pt(i,j) = pt(i,j)*delp(i,j) +               &
-                         (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
+                 pt(i,j) = pt(i,j)*delp(i,j) +               &
+                            (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
 #endif
-              delp(i,j) = delp(i,j) +                     &
-                         (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
+                 delp(i,j) = delp(i,j) +                     &
+                            (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
 #ifndef SW_DYNAMICS
-              pt(i,j) = pt(i,j) / delp(i,j)
+                 pt(i,j) = pt(i,j) / delp(i,j)
 
 #endif
+              enddo
            enddo
-        enddo
+        else if(flagstruct%adv_scheme==2) then
+           do j=js,je
+              do i=is,ie
+#ifndef SW_DYNAMICS
+                 pt(i,j) = pt(i,j) +               &
+                            (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
+#endif
+                 delp(i,j) = delp(i,j) +                     &
+                            (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
+#ifndef SW_DYNAMICS
+                 pt(i,j) = pt(i,j) / delp(i,j)
+
+#endif
+              enddo
+           enddo
+        endif
      endif
 
 #ifdef SW_DYNAMICS
