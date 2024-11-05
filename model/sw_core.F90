@@ -1021,13 +1021,30 @@ module sw_core_mod
                    enddo
                 enddo
            endif
-           call fv_tp_2d(w, crx_adv,cry_adv, npx, npy, hord_vt, gx, gy, xfx_adv, yfx_adv, &
-                          gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, mfx=fx, mfy=fy)
-           do j=js,je
-              do i=is,ie
-                 w(i,j) = delp(i,j)*w(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
+           if(flagstruct%adv_scheme==1)then
+              call fv_tp_2d(w, crx_adv,cry_adv, npx, npy, hord_vt, gx, gy, xfx_adv, yfx_adv, &
+                             gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, mfx=fx, mfy=fy)
+              do j=js,je
+                 do i=is,ie
+                    w(i,j) = delp(i,j)*w(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
+                 enddo
               enddo
-           enddo
+
+           else if(flagstruct%adv_scheme==2)then
+              do j=jsd,jed
+                 do i=isd,ied
+                    w(i,j) = delp(i,j)*w(i,j)
+                 enddo
+              enddo
+              call fv_tp_2d(w, crx_rk2,cry_rk2, npx, npy, hord_vt, gx, gy, xfx_rk2, yfx_rk2, &
+                             gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+                             advscheme=flagstruct%adv_scheme)
+              do j=js,je
+                 do i=is,ie
+                    w(i,j) = w(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
+                 enddo
+              enddo
+           endif
         endif
 
 #ifdef USE_COND
