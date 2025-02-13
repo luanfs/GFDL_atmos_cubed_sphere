@@ -509,7 +509,7 @@ module sw_core_mod
 !     d_sw :: D-Grid Shallow Water Routine
 
    subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, uc_old,vc_old, &
-                   ua, va, divg_d, xflux, yflux, cx, cy,              &
+                   ua, va, divg_d, xflux, yflux, cx, cy, cx_rk2, cy_rk2, &
                    crx_adv, cry_adv,  xfx_adv, yfx_adv, &
                    crx_rk2, cry_rk2,  xfx_rk2, yfx_rk2, & 
                    q_con, z_rat, kgb, heat_source,    &
@@ -552,6 +552,8 @@ module sw_core_mod
 !------------------------
       real, intent(INOUT)::    cx(bd%is:bd%ie+1,bd%jsd:bd%jed  )
       real, intent(INOUT)::    cy(bd%isd:bd%ied,bd%js:bd%je+1)
+      real, intent(INOUT)::    cx_rk2(bd%is:bd%ie+1,bd%jsd:bd%jed  )
+      real, intent(INOUT)::    cy_rk2(bd%isd:bd%ied,bd%js:bd%je+1)
       logical, intent(IN):: hydrostatic
       logical, intent(IN):: inline_q
       real, intent(OUT), dimension(bd%is:bd%ie+1,bd%jsd:bd%jed):: crx_adv, xfx_adv
@@ -996,6 +998,18 @@ module sw_core_mod
            enddo
         enddo
 
+        if(flagstruct%adv_scheme==2)then
+           do j=jsd,jed
+              do i=is,ie+1
+                 cx_rk2(i,j) = cx_rk2(i,j) + crx_rk2(i,j)
+              enddo
+           enddo
+           do j=js,je+1
+              do i=isd,ied
+                 cy_rk2(i,j) = cy_rk2(i,j) + cry_rk2(i,j)
+              enddo
+           enddo
+        endif
 #ifndef SW_DYNAMICS
         do j=js,je
            do i=is,ie

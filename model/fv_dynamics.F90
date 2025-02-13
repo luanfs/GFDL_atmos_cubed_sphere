@@ -76,7 +76,7 @@ contains
                         reproduce_sum, kappa, cp_air, zvir, ptop, ks, ncnst, n_split,     &
                         q_split, u0, v0, u, v, w, delz, hydrostatic, pt, delp, q,   &
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc, uc_old, vc_old, & 
-                        ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z, &
+                        ak, bk, mfx, mfy, cx, cy, cx_rk2, cy_rk2, ze0, hybrid_z, &
                         gridstruct, flagstruct, neststruct, idiag, bd, &
                         parent_grid, domain, inline_mp, diss_est, time_total)
 
@@ -149,6 +149,8 @@ contains
 ! Accumulated Courant number arrays
     real, intent(inout) ::  cx(bd%is:bd%ie+1, bd%jsd:bd%jed, npz)
     real, intent(inout) ::  cy(bd%isd:bd%ied ,bd%js:bd%je+1, npz)
+    real, intent(inout) ::  cx_rk2(bd%is:bd%ie+1, bd%jsd:bd%jed, npz)
+    real, intent(inout) ::  cy_rk2(bd%isd:bd%ied ,bd%js:bd%je+1, npz)
 
     type(fv_grid_type),  intent(inout), target :: gridstruct
     type(fv_flags_type), intent(INOUT) :: flagstruct
@@ -482,7 +484,7 @@ contains
       call timing_on('DYN_CORE')
       call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_map, n_split, zvir, cp_air, akap, cappa, grav, hydrostatic, &
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
-                    uc, vc, uc_old, vc_old, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
+                    uc, vc, uc_old, vc_old, mfx, mfy, cx, cy, cx_rk2, cy_rk2, pkz, peln, q_con, ak, bk, ks, &
                     gridstruct, flagstruct, neststruct, idiag, bd, &
                     domain, n_map==1, i_pack, last_step, diss_est, &
                     consv_te, te_2d, time_total)
@@ -506,21 +508,23 @@ contains
       endif
 
        call timing_on('tracer_2d')
+
        !!! CLEANUP: merge these two calls?
+       if(mpp_pe()==0) print*, 'tracer'
        if (gridstruct%bounded_domain) then
-         call tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
+         call tracer_2d_nested(q, dp1, delp, mfx, mfy, cx, cy, cx_rk2, cy_rk2, gridstruct, bd, domain, npx, npy, npz, nq,    &
                         flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &
                         flagstruct%nord_tr, flagstruct%trdm2, &
-                        k_split, neststruct, parent_grid, n_map, flagstruct%lim_fac)
+                        k_split, neststruct, parent_grid, n_map, flagstruct%lim_fac, flagstruct%adv_scheme)
        else
          if ( flagstruct%z_tracer ) then
-            call tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
+            call tracer_2d_1L(q, dp1, delp, mfx, mfy, cx, cy, cx_rk2, cy_rk2, gridstruct, bd, domain, npx, npy, npz, nq,    &
                  flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &
-                 flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac)
+                 flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac, flagstruct%adv_scheme)
          else
-            call tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
+            call tracer_2d(q, dp1, delp, mfx, mfy, cx, cy, cx_rk2, cy_rk2, gridstruct, bd, domain, npx, npy, npz, nq,    &
                  flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &
-                 flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac)
+                 flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac, flagstruct%adv_scheme)
          endif
        endif
        call timing_off('tracer_2d')

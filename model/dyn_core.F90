@@ -91,7 +91,7 @@ contains
 
  subroutine dyn_core(npx, npy, npz, ng, sphum, nq, bdt, n_map, n_split, zvir, cp, akap, cappa, grav, hydrostatic,  &
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
-                     uc, vc, uc_old, vc_old, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
+                     uc, vc, uc_old, vc_old, mfx, mfy, cx, cy, cx_rk2, cy_rk2, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
                      init_step, i_pack, end_step, diss_est, consv, te0_2d, time_total)
     integer, intent(IN) :: npx
@@ -155,6 +155,8 @@ contains
 ! Accumulated Courant number arrays
     real, intent(inout)::  cx(bd%is:bd%ie+1, bd%jsd:bd%jed, npz)
     real, intent(inout)::  cy(bd%isd:bd%ied ,bd%js:bd%je+1, npz)
+    real, intent(inout)::  cx_rk2(bd%is:bd%ie+1, bd%jsd:bd%jed, npz)
+    real, intent(inout)::  cy_rk2(bd%isd:bd%ied ,bd%js:bd%je+1, npz)
     real, intent(inout),dimension(bd%is:bd%ie,bd%js:bd%je,npz):: pkz
 
     type(fv_grid_type),  intent(INOUT), target :: gridstruct
@@ -291,6 +293,8 @@ contains
     call init_ijk_mem(is, ie  , js,  je+1, npz, mfy, 0.)
     call init_ijk_mem(is, ie+1, jsd, jed,  npz, cx, 0.)
     call init_ijk_mem(isd, ied, js,  je+1, npz, cy, 0.)
+    call init_ijk_mem(is, ie+1, jsd, jed,  npz, cx_rk2, 0.)
+    call init_ijk_mem(isd, ied, js,  je+1, npz, cy_rk2, 0.)
 
     if ( flagstruct%d_con > 1.0E-5 ) then
          allocate( heat_source(isd:ied, jsd:jed, npz) )
@@ -684,7 +688,7 @@ contains
     call timing_on('D_SW')
 !$OMP parallel do default(none) shared(npz,flagstruct,nord_v,pfull,damp_vt,hydrostatic,last_step, &
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
-!$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,uc_old,vc_old,ua,va,divgd,mfx,mfy,cx,cy,     &
+!$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,uc_old,vc_old,ua,va,divgd,mfx,mfy,cx,cy,cx_rk2,cy_rk2,     &
 !$OMP                                  crx,cry,xfx,yfx,crx_rk2,cry_rk2,xfx_rk2,yfx_rk2,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
 !$OMP                                  heat_source,diss_est,radius)                     &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
@@ -785,6 +789,7 @@ contains
                   vc(isd,jsd,k),  uc_old(isd,jsd,k),   vc_old(isd,jsd,k),  &
                   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
                   mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
+                  cx_rk2(is, jsd,k),  cy_rk2(isd,js, k),    &
                   crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
                   crx_rk2(is, jsd,k),  cry_rk2(isd,js, k), xfx_rk2(is, jsd,k), yfx_rk2(isd,js, k),    &
 
