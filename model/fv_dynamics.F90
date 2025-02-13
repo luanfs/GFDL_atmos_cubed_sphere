@@ -510,7 +510,6 @@ contains
        call timing_on('tracer_2d')
 
        !!! CLEANUP: merge these two calls?
-       if(mpp_pe()==0) print*, 'tracer'
        if (gridstruct%bounded_domain) then
          call tracer_2d_nested(q, dp1, delp, mfx, mfy, cx, cy, cx_rk2, cy_rk2, gridstruct, bd, domain, npx, npy, npz, nq,    &
                         flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &

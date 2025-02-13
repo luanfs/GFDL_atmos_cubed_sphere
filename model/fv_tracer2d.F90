@@ -825,7 +825,7 @@ subroutine tracer_2d_nested(q, dp1, delp, mfx, mfy, cx, cy, cx_rk2, cy_rk2, grid
          call timing_off('COMM_TOTAL')
       endif
 
-    if(mpp_pe()==0) print*, 'tracer_nested', nsplt, id_divg
+    !if(mpp_pe()==0) print*, 'tracer_nested', nsplt, id_divg
     do it=1,nsplt
        if ( gridstruct%nested ) then
           neststruct%tracer_nest_timestep = neststruct%tracer_nest_timestep + 1
