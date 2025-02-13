@@ -516,7 +516,7 @@ module sw_core_mod
                    diss_est, zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
                    nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
-                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd)
+                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd, lt2_weight)
    !subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
    !                ua, va, divg_d, xflux, yflux, cx, cy,              &
    !                crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,    &
@@ -534,6 +534,7 @@ module sw_core_mod
       real   , intent(IN):: dt, dddmp, d2_bg, d4_bg, d_con
       real   , intent(IN):: zvir
       real,    intent(in):: damp_v, damp_w, damp_t, kgb
+      real,    intent(in):: lt2_weight
       type(fv_grid_bounds_type), intent(IN) :: bd
       real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) ! divergence
       real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: z_rat
@@ -1001,12 +1002,12 @@ module sw_core_mod
         if(flagstruct%adv_scheme==2)then
            do j=jsd,jed
               do i=is,ie+1
-                 cx_rk2(i,j) = cx_rk2(i,j) + crx_rk2(i,j)
+                 cx_rk2(i,j) = cx_rk2(i,j) + lt2_weight*crx_rk2(i,j)
               enddo
            enddo
            do j=js,je+1
               do i=isd,ied
-                 cy_rk2(i,j) = cy_rk2(i,j) + cry_rk2(i,j)
+                 cy_rk2(i,j) = cy_rk2(i,j) + lt2_weight*cry_rk2(i,j)
               enddo
            enddo
         endif

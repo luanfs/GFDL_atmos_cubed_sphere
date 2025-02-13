@@ -176,6 +176,12 @@ contains
     real ebuffer(npy+2,npz)
     real nbuffer(npx+2,npz)
     real sbuffer(npx+2,npz)
+    real :: cr_weights(1:n_split) ! These weights are specifically designed to interpolate the time averaged wind field
+                                  ! centered at a longer time step (dt_atmos).
+                                  ! Used by LT2 only to compute cx_rk2 and cy_rk2 needed by tracers advection.
+    real :: cr_weight
+
+!
 ! ----   For external mode:
     real divg2(bd%is:bd%ie+1,bd%js:bd%je+1)
     real wk(bd%isd:bd%ied,bd%jsd:bd%jed)
@@ -315,6 +321,9 @@ contains
          endif
     endif
 
+    call coeffs_cr(n_split, cr_weights)
+
+
 
 !-----------------------------------------------------
   do it=1,n_split
@@ -322,6 +331,8 @@ contains
 #ifdef ROT3
      call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
 #endif
+     cr_weight = cr_weights(it)
+     !if(mpp_pe() == 0) print*, cr_weight
      if ( flagstruct%breed_vortex_inline .or. it==n_split ) then
           remap_step = .true.
      else
@@ -690,7 +701,7 @@ contains
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,uc_old,vc_old,ua,va,divgd,mfx,mfy,cx,cy,cx_rk2,cy_rk2,     &
 !$OMP                                  crx,cry,xfx,yfx,crx_rk2,cry_rk2,xfx_rk2,yfx_rk2,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
-!$OMP                                  heat_source,diss_est,radius)                     &
+!$OMP                                  heat_source,diss_est,radius, cr_weight)                     &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
 !$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s, diss_e, z_rat)
     do k=1,npz
@@ -802,7 +813,7 @@ contains
                   flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
                   nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
                   damp_vt(k), damp_w, damp_t, d_con_k, &
-                  hydrostatic, gridstruct, flagstruct, bd)
+                  hydrostatic, gridstruct, flagstruct, bd, cr_weight)
 
        if((.not.flagstruct%use_old_omega) .and. last_step ) then
 ! Average horizontal "convergence" to cell center
@@ -2762,5 +2773,26 @@ do 1000 j=jfirst,jlast
 
 
  end subroutine compute_dudz
+
+ subroutine coeffs_cr(n_split, weights)
+    ! Compute coefficients for computation of cr_rk2 and cr_rk2 
+    integer :: n_split
+    real, intent(inout) :: weights(1:n_split)
+    real :: x
+    integer :: i, j, N
+
+    N = n_split
+    x = real((N+1.0d0)*0.5d0)
+    do i = 1, N
+       weights(i)=1.d0
+       do j = 1, N
+         if (i.ne.j) then
+           weights(i) = weights(i)*real(x-j)/real(i-j)
+         endif
+       enddo
+       weights(i) = weights(i)*n_split
+    enddo
+   
+ end subroutine coeffs_cr
 
 end module dyn_core_mod
